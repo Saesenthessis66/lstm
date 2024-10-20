@@ -29,26 +29,30 @@ if __name__ == '__main__':
     df['Timestamp'] = pd.to_datetime(df['Timestamp'])
     df.index = df.pop('Timestamp')
 
-    # Normalize the data
-    scaler = MinMaxScaler()
+    # Normalize the data for features (first scaler)
+    scaler_features = MinMaxScaler()
     df_scaled = df.copy()
-    df_scaled[['Battery cell voltage', 'X-coordinate', 'Y-coordinate', 'Going to ID', 'Heading']] = scaler.fit_transform(
+    df_scaled[['Battery cell voltage', 'X-coordinate', 'Y-coordinate', 'Going to ID', 'Heading']] = scaler_features.fit_transform(
         df[['Battery cell voltage', 'X-coordinate', 'Y-coordinate', 'Going to ID', 'Heading']]
     )
 
-    # Create sequences
-    def create_sequences(df, n_steps):
+    # Normalize the target data (second scaler)
+    scaler_target = MinMaxScaler()
+    df_target_scaled = scaler_target.fit_transform(df[['Battery cell voltage', 'X-coordinate', 'Y-coordinate']])
+
+    # Create sequences (using df_scaled for features and df_target_scaled for targets)
+    def create_sequences(df_features, df_target, n_steps):
         X, y = [], []
-        data = df[['Battery cell voltage', 'X-coordinate', 'Y-coordinate', 'Going to ID', 'Heading']]
-        for i in range(len(data) - n_steps):
-            X.append(data.iloc[i:i+n_steps].values)
-            y.append(data.iloc[i+n_steps].values)
+        for i in range(len(df_features) - n_steps):
+            X.append(df_features.iloc[i:i+n_steps].values)
+            y.append(df_target[i+n_steps])
         return np.array(X), np.array(y)
 
     n_steps = 3
-    X, y = create_sequences(df_scaled, n_steps)
+    X, y = create_sequences(df_scaled[['Battery cell voltage', 'X-coordinate', 'Y-coordinate', 'Going to ID', 'Heading']],
+                            df_target_scaled, n_steps)
 
-    # Split data into training, validation, and test sets
+    # Splitting data into training, validation, and test sets
     q_80 = int(len(X) * 0.8)
     q_90 = int(len(X) * 0.9)
 
@@ -63,7 +67,7 @@ if __name__ == '__main__':
     model.add(LSTM(50, input_shape=(n_steps, 5)))
     model.add(Dense(32, activation='relu'))
     model.add(Dense(32, activation='relu'))
-    model.add(Dense(5))  # Output layer with 5 features (x, y, battery, etc.)
+    model.add(Dense(3))  # Output layer with 3 features (Battery cell voltage, X-coordinate, Y-coordinate)
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001, clipvalue=1.0)  # Add gradient clipping
     model.compile(optimizer=optimizer, loss='mse')
@@ -79,8 +83,8 @@ if __name__ == '__main__':
     y_pred = model.predict(X_test)
 
     # Inverse scaling for both y_test and y_pred to bring them back to the original scale
-    y_test_rescaled = scaler.inverse_transform(y_test)
-    y_pred_rescaled = scaler.inverse_transform(y_pred)
+    y_test_rescaled = scaler_target.inverse_transform(y_test)
+    y_pred_rescaled = scaler_target.inverse_transform(y_pred)
 
     # Create the plot
     plt.figure(figsize=(10, 6))
