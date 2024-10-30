@@ -88,6 +88,37 @@ if __name__ == '__main__':
         for segment in dataframes:
             segment.drop(columns=['Distance'], inplace=True)
 
+        # Number of points to resample (you can adjust this number)
+        num_points = 100
+
+        # Step 1: Interpolate each dataframe to have the same number of points
+        interpolated_dfs = []
+        for df in dataframes:
+            # Create a fixed range of values from 0 to 1 to act as a new "index"
+            resample_index = np.linspace(0, 1, num_points)
+            # Interpolate X and Y coordinates using this new index
+            df_interpolated = pd.DataFrame({
+                'X-coordinate': np.interp(resample_index, np.linspace(0, 1, len(df)), df['X-coordinate']),
+                'Y-coordinate': np.interp(resample_index, np.linspace(0, 1, len(df)), df['Y-coordinate'])
+            })
+            interpolated_dfs.append(df_interpolated)
+
+        # Step 2: Concatenate and calculate the average for each coordinate across all dataframes
+        average_df = pd.concat(interpolated_dfs).groupby(level=0).mean()
+
+        # Step 3: Plot the averaged X and Y coordinates
+        plt.figure(figsize=(10, 6))
+        plt.plot(average_df['X-coordinate'], average_df['Y-coordinate'], label="Average Path", color="blue")
+
+        # Add labels and title
+        plt.title("Average Path of Segmented Dataframes")
+        plt.xlabel("Average X-coordinate")
+        plt.ylabel("Average Y-coordinate")
+        plt.xlim(25, 60)  # Set x-axis limits
+        plt.ylim(14, 28)  # Set y-axis limits
+        plt.legend()
+        plt.show()
+
         # Plot each segment as a separate line
         plt.figure(figsize=(10, 6))  # Adjust the figure size as needed
 
