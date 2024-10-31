@@ -52,14 +52,22 @@ if __name__ == '__main__':
 
         # Drop rows with NaN values
         df = df.dropna()
+
+        # Set 'Timestamp' as index
         df['Timestamp'] = pd.to_datetime(df['Timestamp'])
         df.index = df.pop('Timestamp')
 
+        # Assign current segment from an array
         X = segments[i]
 
         # Filter data to segment X
         df = df[df['Current segment'] == X]
 
+        # Remove rows where Current segment is 56 and Y-coordinate > 18
+        if X == 56.0:
+            df = df[~(df['Y-coordinate'] > 18)]
+
+        # Set distance for max distance between two consecutive points
         distance_threshold = 1
 
         # Calculate Euclidean distance explicitly between each pair of consecutive points
