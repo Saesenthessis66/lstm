@@ -149,7 +149,7 @@ def create_dataframes():
 
 
         # Number of points to resample is equal to average amount of points in one run in segment
-        num_points = avg_len
+        num_points = int(avg_len)
 
         # Interpolate each dataframe to have the same number of points
         interpolated_dfs = []
