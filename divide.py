@@ -92,12 +92,22 @@ if __name__ == '__main__':
             segment_df = df.iloc[start_idx:].copy()
             dataframes.append(segment_df)
 
+        # Initialize variable for computing average dataframe length  
+
+        avg_len = 0
+
         # Optionally remove the Distance column from each segment if no longer needed
         for segment in dataframes:
             segment.drop(columns=['Distance'], inplace=True)
+        # Compute average amount of points in one run in segment 
+            avg_len += len(segment)
+
+        avg_len /= len(dataframes)
+
+        print(avg_len)
 
         # Number of points to resample (you can adjust this number)
-        num_points = 100
+        num_points = avg_len
 
         # Step 1: Interpolate each dataframe to have the same number of points
         interpolated_dfs = []
