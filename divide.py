@@ -1,12 +1,6 @@
-import os
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 import pandas as pd
 import numpy as np
-import tensorflow as tf
 import matplotlib.pyplot as plt
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
-from sklearn.preprocessing import MinMaxScaler
 
 if __name__ == '__main__':
 
@@ -104,10 +98,8 @@ if __name__ == '__main__':
 
         avg_len /= len(dataframes)
 
-        print(avg_len)
-
         # Number of points to resample (you can adjust this number)
-        num_points = avg_len
+        num_points = int(avg_len)
 
         # Step 1: Interpolate each dataframe to have the same number of points
         interpolated_dfs = []

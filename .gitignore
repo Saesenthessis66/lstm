@@ -1,2 +1,5 @@
 agv.pkl
 venv
+keras
+__pycache__
+jakub.keras

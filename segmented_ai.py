@@ -33,8 +33,8 @@ def create_ai(df, segment_id):
     X, y = create_sequences(df_scaled[[ 'X-coordinate', 'Y-coordinate','Heading'  ]],
                             df_target_scaled, n_steps)
     
-    X_val = X[40:60]
-    y_val = y[40:60]
+    X_val = X[:int(len(X)/3)]
+    y_val = y[:int(len(y)/3)]
 
     model = Sequential([
         LSTM(50, input_shape=(n_steps, 3)),
@@ -48,7 +48,7 @@ def create_ai(df, segment_id):
     # Train the model
     model.fit(X, y, epochs=300, batch_size=64, validation_data=(X_val, y_val), verbose=1)
 
-    model.save('segment_'+str(segment_id)+'.keras')
+    model.save('keras/segment_'+str(segment_id)+'.keras')
 
 def create_dataframes():
     segments = [59.0,
