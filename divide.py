@@ -1,55 +1,40 @@
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 
-if __name__ == '__main__':
+class SegmentDataFrame(pd.DataFrame):
+    # Override __getitem__ for custom behavior
+    def __getitem__(self, key):
+        if isinstance(key, str) and key.isdigit():
+            # If key is a string representation of a number, filter by 'Current segment'
+            segment_id = float(key)  # Convert to float, assuming 'Current segment' is a float
+            return self[self['Current segment'] == segment_id]
+        else:
+            # Use regular indexing behavior for other keys
+            return super().__getitem__(key)
 
-    segments = [59.0,
-                56.0,
-                20.0,
-                48.0,
-                52.0,
-                16.0,
-                44.0,
-                12.0,
-                36.0,
-                4.0,
-                7.0,
-                39.0,
-                15.0,
-                47.0,
-                19.0,
-                55.0,
-                51.0,
-                27.0,
-                63.0,
-                60.0,
-                24.0,
-                10.0,
-                42.0,
-                41.0,
-                9.0,
-                23.0]
+def read_data_from_csv():
+    data = pd.read_csv('agv.pkl', low_memory=False)
+    data = data[['Timestamp', 'X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']]
+    data['X-coordinate'] = pd.to_numeric(data['X-coordinate'], errors='coerce')
+    data['Y-coordinate'] = pd.to_numeric(data['Y-coordinate'], errors='coerce')
+    data['Heading'] = pd.to_numeric(data['Heading'], errors='coerce')
+    data['Current segment'] = pd.to_numeric(data['Current segment'], errors='coerce')
+    data = data.dropna()
+    data['Timestamp'] = pd.to_datetime(data['Timestamp'])
+    data.index = data.pop('Timestamp')
+    
+    # Return data as a SegmentDataFrame instead of a regular DataFrame
+    return SegmentDataFrame(data)
+    
+def create_interpolated_dataframes(data, segments):
+
+    # Initialize array that stores data for all segments
+    final_data = []
 
     for i in range(0,len(segments)):
-        # Load DataFrame
-        df = pd.read_csv('agv.pkl', low_memory=False)
 
-        # Select relevant columns and handle missing/invalid values
-        df = df[['Timestamp', 'Battery cell voltage', 'X-coordinate', 'Y-coordinate', 'Heading', 'Going to ID', 'Current segment']]
-        df['X-coordinate'] = pd.to_numeric(df['X-coordinate'], errors='coerce')
-        df['Y-coordinate'] = pd.to_numeric(df['Y-coordinate'], errors='coerce')
-        df['Battery cell voltage'] = pd.to_numeric(df['Battery cell voltage'], errors='coerce')
-        df['Going to ID'] = pd.to_numeric(df['Going to ID'], errors='coerce')
-        df['Heading'] = pd.to_numeric(df['Heading'], errors='coerce')
-        df['Current segment'] = pd.to_numeric(df['Current segment'], errors='coerce')
-
-        # Drop rows with NaN values
-        df = df.dropna()
-
-        # Set 'Timestamp' as index
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-        df.index = df.pop('Timestamp')
+        # Copy unaltered data from file
+        df = data.copy()
 
         # Assign current segment from an array
         X = segments[i]
@@ -87,21 +72,19 @@ if __name__ == '__main__':
             dataframes.append(segment_df)
 
         # Initialize variable for computing average dataframe length  
-
         avg_len = 0
 
         # Optionally remove the Distance column from each segment if no longer needed
         for segment in dataframes:
             segment.drop(columns=['Distance'], inplace=True)
-        # Compute average amount of points in one run in segment 
-            avg_len += len(segment)
+            avg_len += len(segment)                         # Compute average amount of points in one run in segment
 
-        avg_len /= len(dataframes)
+        avg_len += len(segment) 
 
         # Number of points to resample (you can adjust this number)
-        num_points = int(avg_len)
+        num_points = avg_len
 
-        # Step 1: Interpolate each dataframe to have the same number of points
+        # Interpolate each dataframe to have the same number of points
         interpolated_dfs = []
         for df in dataframes:
             # Create a fixed range of values from 0 to 1 to act as a new "index"
@@ -109,39 +92,69 @@ if __name__ == '__main__':
             # Interpolate X and Y coordinates using this new index
             df_interpolated = pd.DataFrame({
                 'X-coordinate': np.interp(resample_index, np.linspace(0, 1, len(df)), df['X-coordinate']),
-                'Y-coordinate': np.interp(resample_index, np.linspace(0, 1, len(df)), df['Y-coordinate'])
+                'Y-coordinate': np.interp(resample_index, np.linspace(0, 1, len(df)), df['Y-coordinate']),
+                'Heading': np.interp(resample_index, np.linspace(0, 1, len(df)), df['Heading'])
             })
             interpolated_dfs.append(df_interpolated)
 
-        # Step 2: Concatenate and calculate the average for each coordinate across all dataframes
+        # Concatenate and calculate the average for each coordinate across all dataframes
         average_df = pd.concat(interpolated_dfs).groupby(level=0).mean()
 
-        # Step 3: Plot the averaged X and Y coordinates
-        plt.figure(figsize=(10, 6))
-        plt.plot(average_df['X-coordinate'], average_df['Y-coordinate'], label="Average Path", color="blue")
+        # Append averaged data for segment in array
+        final_data.append(average_df)
 
-        # Add labels and title
-        plt.title("Average Path of Segmented Dataframes")
-        plt.xlabel("Average X-coordinate")
-        plt.ylabel("Average Y-coordinate")
-        plt.xlim(25, 60)  # Set x-axis limits
-        plt.ylim(14, 28)  # Set y-axis limits
-        plt.legend()
-        plt.show()
+    return final_data
 
-        # Plot each segment as a separate line
-        plt.figure(figsize=(10, 6))  # Adjust the figure size as needed
+def find_close_segments(segments_data, segments, distance_threshold=1.0):
 
-        for i, segment_df in enumerate(dataframes):
-            plt.plot(segment_df['X-coordinate'], segment_df['Y-coordinate'], label=f'Run {i+1}')
+    close_pairs = []
+    
+    # Extract the last point of each segment (endpoint) and the first point (start point)
+    segment_endpoints = [(segment.iloc[-1], segment.iloc[0]) for segment in segments_data]
 
-        # Add titles and labels
-        plt.xlim(25, 60)  # Set x-axis limits
-        plt.ylim(14, 28)  # Set y-axis limits
-        plt.title("Plot of Segmented Dataframes for segment "+ str(X))
-        plt.xlabel("X-coordinate")
-        plt.ylabel("Y-coordinate")
-        plt.legend()  # Display a legend for each segment
-        plt.show()
+    # Iterate over each pair of segments
+    for i, (end_i, _) in enumerate(segment_endpoints):
+        for j, (_, start_j) in enumerate(segment_endpoints):
+            # Skip if the indices are the same
+            if i == j:
+                continue
+            
+            # Calculate Euclidean distance between end of segment i and start of segment j
+            distance = np.sqrt((end_i['X-coordinate'] - start_j['X-coordinate'])**2 +
+                               (end_i['Y-coordinate'] - start_j['Y-coordinate'])**2)
+            
+            # Check if distance is within the threshold
+            if distance <= distance_threshold:
+                # Use the actual segment ID from `segments` list
+                close_pairs.append((segments[i], segments[j]))  # Store segment IDs instead of indices
+    
+    return close_pairs
 
-        # `dataframes` now contains all segmented dataframes
+def get_unique_segments(data):
+    # Extract unique segments from the 'Current segment' column
+    unique_segments = data['Current segment'].unique()
+    return unique_segments
+
+def create_segment_dictionary(segment_ids, dataframes):
+
+    # Create a dictionary by zipping segment_ids and dataframes
+    segment_dict = {str(segment_id): df for segment_id, df in zip(segment_ids, dataframes)}
+    return segment_dict
+
+
+# data = read_data_from_csv()
+
+# segments = get_unique_segments(data)
+
+# # Generate the segment data
+# segmented_df = create_interpolated_dataframes(data, segments)
+
+# # Find close segments using the specified distance threshold
+# close_segments = find_close_segments(segmented_df, segments, distance_threshold=1.5)
+
+# print("Close segment pairs:", close_segments)
+
+# segment_dict = create_segment_dictionary(segments, segmented_df)
+
+# # Accessing the DataFrame for segment 15:
+# print(segment_dict['59.0'])
