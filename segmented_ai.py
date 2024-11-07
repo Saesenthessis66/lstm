@@ -24,8 +24,11 @@ if __name__ == '__main__':
 
     for i in range (0,len(close_segments)):
 
-        first_segment = close_segments[i][0]
-        second_segment = close_segments[i][1]
+        # first_segment = close_segments[i][0]
+        # second_segment = close_segments[i][1]
+
+        first_segment = 20.0
+        second_segment = 48.0
 
         df_first = segment_dict[str(first_segment)]
         df_second = segment_dict[str(second_segment)]
@@ -66,10 +69,10 @@ if __name__ == '__main__':
             Dense(32, activation='relu'),
             Dense(3)
         ])
-        optimizer = tf.keras.optimizers.Adam(learning_rate=0.002, clipvalue=1.1)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001, clipvalue=1.2)
         model.compile(optimizer=optimizer, loss='mse')
 
         # Train the model
-        model.fit(X, y, epochs=500, batch_size=32, verbose=1)
+        model.fit(X, y, epochs=600, batch_size=32, verbose=1)
 
         model.save('kerases/segments_' + str(first_segment) + '_' + str(second_segment) + '.keras')

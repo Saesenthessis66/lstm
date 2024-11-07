@@ -1,12 +1,7 @@
-import heapq
-import queue
-import tensorflow as tf
 import keras
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import pandas as pd
-import math
-from enum import Enum 
 import matplotlib.pyplot as plt
 
 n_steps = 20
@@ -25,6 +20,13 @@ import divide
 _data = []
 finData =[]
 model: keras.Model = keras.models.load_model(r'kerases/segments_56.0_20.0.keras')
+model2: keras.Model = keras.models.load_model(r'kerases/segments_20.0_48.0.keras')
+# model3: keras.Model = keras.models.load_model(r'kerases/segments_48.0_52.0.keras')
+# model4: keras.Model = keras.models.load_model(r'kerases/segments_52.0_16.0.keras')
+# model5: keras.Model = keras.models.load_model(r'kerases/segments_16.0_44.0.keras')
+# model6: keras.Model = keras.models.load_model(r'kerases/segments_44.0_12.0.keras')
+# model7: keras.Model = keras.models.load_model(r'kerases/segments_12.0_36.0.keras')
+# model8: keras.Model = keras.models.load_model(r'kerases/segments_36.0_4.0.keras')
 
 data = divide.read_data_from_csv()
 
@@ -38,8 +40,11 @@ segment_dict = divide.create_segment_dictionary(segments, segmented_df)
 
 df_first = segment_dict['56.0']
 df_second = segment_dict['20.0']
+df_third = segment_dict['48.0']
 
-df = pd.concat([df_first, df_second], ignore_index=True)
+df = pd.concat([ df_first, df_second, df_third], ignore_index=True)
+
+plt.plot(df['X-coordinate'],df['Y-coordinate'], 'o')
 
 _scaler = MinMaxScaler()
 df_scaled = df.copy()
@@ -49,8 +54,6 @@ to_drive = df_scaled.values.tolist()
 for i in range(len(to_drive)):
     _data.append(to_drive[i])
 
-
-df.plot(kind = 'scatter', x = 'X-coordinate', y = 'Y-coordinate')
 # plt.show()
 # dataNP = np.array(_data)
 # plt.scatter(dataNP[:, 0], dataNP[:, 1])
@@ -67,17 +70,42 @@ finData.clear()
 for i in range(n_steps):
     finData.append(to_drive[i])
 
-for i in range(170):
+for i in range(800):
     df2 = pd.DataFrame(finData, columns=['X-coordinate', 'Y-coordinate', 'Heading'])
     df2 = df2.values
     df2 = df2.astype('float32')
     toPredict = create_dataset(df2)
-    predicted = model.predict(toPredict)
-    finData.append(predicted[0])
+    if i < 150:
+        predicted = model.predict(toPredict)
+        finData.append(predicted[0])
+    # if i >= 110 and i < 130:
+    #     predicted = model2.predict(toPredict)
+    #     finData.append(predicted[0])
+    # if i >= 90 and i < 100:
+    #     predicted = model3.predict(toPredict)
+    #     finData.append(predicted[0])
+    # if i >= 100 and i < 115:
+    #     predicted = model4.predict(toPredict)
+    #     finData.append(predicted[0])
+    # if i >= 115 and i < 130:
+    #     predicted = model5.predict(toPredict)
+    #     finData.append(predicted[0])
+    # if i >= 130 and i < 145:
+    #     predicted = model6.predict(toPredict)
+    #     finData.append(predicted[0])
+    # if i >= 145 and i < 160:
+    #     predicted = model7.predict(toPredict)
+    #     finData.append(predicted[0])  
+    # if i >= 160:
+    #     predicted = model8.predict(toPredict)
+    #     finData.append(predicted[0])      
 
 toPlot = _scaler.inverse_transform(finData)
+
+# finNp = np.array(toPlot)
+# plt.plot(finNp[:, 0], finNp[:, 1], color = 'red')
+# # plt.show()
 
 finNp = np.array(toPlot)
 plt.plot(finNp[:, 0], finNp[:, 1], color = 'red')
 plt.show()
-
