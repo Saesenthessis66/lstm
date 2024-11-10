@@ -45,7 +45,7 @@ df_first = segment_dict['56.0']
 df_second = segment_dict['20.0']
 df_third = segment_dict['48.0']
 
-df = pd.concat([ df_first,df_second, df_third], ignore_index=True)
+df = pd.concat([df_first, df_second, df_third], ignore_index=True)
 
 plt.plot(df['X-coordinate'],df['Y-coordinate'], 'o')
 
@@ -78,14 +78,12 @@ for i in range(800):
     df2 = df2.values
     df2 = df2.astype('float32')
     toPredict = create_dataset(df2)
-    if i < 100:
+    if i < 150:
         predicted = model.predict(toPredict)
         finData.append(predicted[0])
-    else :
-        break
-    # if i >= 110 and i < 130:
-    #     predicted = model2.predict(toPredict)
-    #     finData.append(predicted[0])
+    if i >= 150 and i < 250:
+        predicted = model2.predict(toPredict)
+        finData.append(predicted[0])
     # if i >= 90 and i < 100:
     #     predicted = model3.predict(toPredict)
     #     finData.append(predicted[0])
