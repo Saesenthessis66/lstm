@@ -3,3 +3,4 @@ venv
 kerases
 __pycache__
 jakub.keras
+scaler.pkl

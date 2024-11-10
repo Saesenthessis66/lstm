@@ -25,11 +25,11 @@ if __name__ == '__main__':
 
     for i in range (0,len(close_segments)):
 
-        # first_segment = close_segments[i][0]
-        # second_segment = close_segments[i][1]
+        first_segment = close_segments[i][0]
+        second_segment = close_segments[i][1]
 
-        first_segment = 56.0
-        second_segment = 20.0
+        # first_segment = 36.0
+        # second_segment = 4.0
 
         df_first = segment_dict[str(first_segment)]
         df_second = segment_dict[str(second_segment)]

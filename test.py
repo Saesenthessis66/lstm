@@ -24,12 +24,12 @@ _data = []
 finData =[]
 model: keras.Model = keras.models.load_model(r'kerases/segments_56.0_20.0.keras')
 model2: keras.Model = keras.models.load_model(r'kerases/segments_20.0_48.0.keras')
-# model3: keras.Model = keras.models.load_model(r'kerases/segments_48.0_52.0.keras')
-# model4: keras.Model = keras.models.load_model(r'kerases/segments_52.0_16.0.keras')
-# model5: keras.Model = keras.models.load_model(r'kerases/segments_16.0_44.0.keras')
-# model6: keras.Model = keras.models.load_model(r'kerases/segments_44.0_12.0.keras')
-# model7: keras.Model = keras.models.load_model(r'kerases/segments_12.0_36.0.keras')
-# model8: keras.Model = keras.models.load_model(r'kerases/segments_36.0_4.0.keras')
+model3: keras.Model = keras.models.load_model(r'kerases/segments_48.0_52.0.keras')
+model4: keras.Model = keras.models.load_model(r'kerases/segments_52.0_16.0.keras')
+model5: keras.Model = keras.models.load_model(r'kerases/segments_16.0_44.0.keras')
+model6: keras.Model = keras.models.load_model(r'kerases/segments_44.0_12.0.keras')
+model7: keras.Model = keras.models.load_model(r'kerases/segments_12.0_36.0.keras')
+model8: keras.Model = keras.models.load_model(r'kerases/segments_36.0_4.0.keras')
 
 data = divide.read_data_from_csv()
 
@@ -41,11 +41,17 @@ close_segments = divide.find_close_segments(segmented_df, segments, distance_thr
 
 segment_dict = divide.create_segment_dictionary(segments, segmented_df)
 
-df_first = segment_dict['56.0']
-df_second = segment_dict['20.0']
-df_third = segment_dict['48.0']
+df_1 = segment_dict['56.0']
+df_2 = segment_dict['20.0']
+df_3 = segment_dict['48.0']
+df_4 = segment_dict['52.0']
+df_5 = segment_dict['16.0']
+df_6 = segment_dict['44.0']
+df_7 = segment_dict['12.0']
+df_8 = segment_dict['36.0']
+df_9 = segment_dict['4.0']
 
-df = pd.concat([df_first, df_second, df_third], ignore_index=True)
+df = pd.concat([df_1, df_2, df_3, df_4, df_5, df_6, df_7, df_8, df_9,], ignore_index=True)
 
 plt.plot(df['X-coordinate'],df['Y-coordinate'], 'o')
 
@@ -73,7 +79,7 @@ finData.clear()
 for i in range(n_steps):
     finData.append(to_drive[i])
 
-for i in range(800):
+for i in range(900 - n_steps):
     df2 = pd.DataFrame(finData, columns=['X-coordinate', 'Y-coordinate', 'Heading'])
     df2 = df2.values
     df2 = df2.astype('float32')
@@ -84,24 +90,24 @@ for i in range(800):
     if i >= 150 and i < 250:
         predicted = model2.predict(toPredict)
         finData.append(predicted[0])
-    # if i >= 90 and i < 100:
-    #     predicted = model3.predict(toPredict)
-    #     finData.append(predicted[0])
-    # if i >= 100 and i < 115:
-    #     predicted = model4.predict(toPredict)
-    #     finData.append(predicted[0])
-    # if i >= 115 and i < 130:
-    #     predicted = model5.predict(toPredict)
-    #     finData.append(predicted[0])
-    # if i >= 130 and i < 145:
-    #     predicted = model6.predict(toPredict)
-    #     finData.append(predicted[0])
-    # if i >= 145 and i < 160:
-    #     predicted = model7.predict(toPredict)
-    #     finData.append(predicted[0])  
-    # if i >= 160:
-    #     predicted = model8.predict(toPredict)
-    #     finData.append(predicted[0])      
+    if i >= 250 and i < 350:
+        predicted = model3.predict(toPredict)
+        finData.append(predicted[0])
+    if i >= 350 and i < 450:
+        predicted = model4.predict(toPredict)
+        finData.append(predicted[0])
+    if i >= 450 and i < 550:
+        predicted = model5.predict(toPredict)
+        finData.append(predicted[0])
+    if i >= 550 and i < 650:
+        predicted = model6.predict(toPredict)
+        finData.append(predicted[0])
+    if i >= 650 and i < 750:
+        predicted = model7.predict(toPredict)
+        finData.append(predicted[0])  
+    if i >= 750:
+        predicted = model8.predict(toPredict)
+        finData.append(predicted[0])      
 
 toPlot = _scaler.inverse_transform(finData)
 
