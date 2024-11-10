@@ -24,14 +24,6 @@ def read_data_from_csv():
     data = data.dropna()
     data['Timestamp'] = pd.to_datetime(data['Timestamp'])
     data.index = data.pop('Timestamp')
-
-    # Initialize and fit the scaler
-    scaler = MinMaxScaler()
-    columns_to_scale = ['X-coordinate', 'Y-coordinate', 'Heading']
-    scaler.fit(data[columns_to_scale])  # Fit only on the specified columns
-
-    # Save the scaler to disk
-    joblib.dump(scaler, 'scaler.pkl')
     
     # Return data as a SegmentDataFrame instead of a regular DataFrame
     return SegmentDataFrame(data)
@@ -150,6 +142,16 @@ def create_segment_dictionary(segment_ids, dataframes):
     # Create a dictionary by zipping segment_ids and dataframes
     segment_dict = {str(segment_id): df for segment_id, df in zip(segment_ids, dataframes)}
     return segment_dict
+
+def create_scaler(data):
+    # Initialize and fit the scaler
+    scaler = MinMaxScaler()
+    columns_to_scale = ['X-coordinate', 'Y-coordinate', 'Heading']
+    scaler.fit(data[columns_to_scale])  # Fit only on the specified columns
+
+    # Save the scaler to disk
+    joblib.dump(scaler, 'scaler.pkl')
+
 
 # data = read_data_from_csv()
 
