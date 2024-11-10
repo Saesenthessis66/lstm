@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import joblib
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from sklearn.preprocessing import MinMaxScaler
@@ -36,9 +37,9 @@ if __name__ == '__main__':
         df = pd.concat([df_first, df_second], ignore_index=True)
 
         # Normalize the data 
-        scaler = MinMaxScaler()
+        scaler = joblib.load('scaler.pkl')
         df_scaled = df.copy()
-        df_scaled = scaler.fit_transform(df)
+        df_scaled = scaler.transform(df)
 
         # Create sequences (using df_scaled for features and df_target_scaled for targets)
         def create_sequences(data, n_steps):

@@ -1,3 +1,6 @@
+import os
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+import joblib
 import keras
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
@@ -42,15 +45,15 @@ df_first = segment_dict['56.0']
 df_second = segment_dict['20.0']
 df_third = segment_dict['48.0']
 
-df = pd.concat([ df_first, df_second, df_third], ignore_index=True)
+df = pd.concat([ df_first,df_second, df_third], ignore_index=True)
 
 plt.plot(df['X-coordinate'],df['Y-coordinate'], 'o')
 
-_scaler = MinMaxScaler()
+_scaler = joblib.load('scaler.pkl')
 df_scaled = df.copy()
-df_scaled[['X-coordinate', 'Y-coordinate', 'Heading']] = _scaler.fit_transform(df[['X-coordinate',
-                                                                                    'Y-coordinate', 'Heading']])
-to_drive = df_scaled.values.tolist()
+df_scaled = _scaler.transform(df)
+
+to_drive = df_scaled.tolist()
 for i in range(len(to_drive)):
     _data.append(to_drive[i])
 
@@ -75,9 +78,11 @@ for i in range(800):
     df2 = df2.values
     df2 = df2.astype('float32')
     toPredict = create_dataset(df2)
-    if i < 150:
+    if i < 100:
         predicted = model.predict(toPredict)
         finData.append(predicted[0])
+    else :
+        break
     # if i >= 110 and i < 130:
     #     predicted = model2.predict(toPredict)
     #     finData.append(predicted[0])
