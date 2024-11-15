@@ -37,14 +37,12 @@ class DataDivision:
         
     def read_data_from_csv(self):
         data = pd.read_csv(self._dataFileName, low_memory=False)
-        data = data[['Timestamp', 'X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']]
+        data = data[['X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']]
         data['X-coordinate'] = pd.to_numeric(data['X-coordinate'], errors='coerce')
         data['Y-coordinate'] = pd.to_numeric(data['Y-coordinate'], errors='coerce')
         data['Heading'] = pd.to_numeric(data['Heading'], errors='coerce')
         data['Current segment'] = pd.to_numeric(data['Current segment'], errors='coerce')
         data = data.dropna()
-        data['Timestamp'] = pd.to_datetime(data['Timestamp'])
-        data.index = data.pop('Timestamp')
         
         # Return data as a SegmentDataFrame instead of a regular DataFrame
         self._fullData = SegmentDataFrame(data)
@@ -64,10 +62,6 @@ class DataDivision:
 
             # Filter data to segment X
             df = df[df['Current segment'] == X]
-
-            # Remove rows where Current segment is 56 and Y-coordinate > 18
-            if X == 56.0:
-                df = df[~(df['Y-coordinate'] > 18)]
 
             # Initialize variable for computing average dataframe length  
             avg_len = len(df)

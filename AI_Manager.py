@@ -23,11 +23,11 @@ class AI_Manager:
         for i in range (0,len(close_segments)):
 
             # Assign two close segments IDs 
-            first_segment = close_segments[i][0]
-            second_segment = close_segments[i][1]
+            # first_segment = close_segments[i][0]
+            # second_segment = close_segments[i][1]
 
-            # first_segment = 36.0
-            # second_segment = 4.0
+            first_segment = 10
+            second_segment = 14
 
             # Load data for two close segments
             df_first = segment_dict[str(first_segment)]
