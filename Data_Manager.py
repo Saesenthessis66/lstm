@@ -122,31 +122,6 @@ class DataDivision:
 
         self._interpolatedData = final_data 
 
-    def find_close_segments(self, distance_threshold=1.0):
-
-        close_pairs = []
-        
-        # Extract the last point of each segment (endpoint) and the first point (start point)
-        segment_endpoints = [(segment.iloc[-1], segment.iloc[0]) for segment in self._interpolatedData]
-
-        # Iterate over each pair of segments
-        for i, (end_i, _) in enumerate(segment_endpoints):
-            for j, (_, start_j) in enumerate(segment_endpoints):
-                # Skip if the indices are the same
-                if i == j:
-                    continue
-                
-                # Calculate Euclidean distance between end of segment i and start of segment j
-                distance = np.sqrt((end_i['X-coordinate'] - start_j['X-coordinate'])**2 +
-                                (end_i['Y-coordinate'] - start_j['Y-coordinate'])**2)
-                
-                # Check if distance is within the threshold
-                if distance <= distance_threshold:
-                    # Use the actual segment ID from `segments` list
-                    close_pairs.append((self._allSegments[i], self._allSegments[j]))  # Store segment IDs instead of indices
-        
-        self._closePairs = close_pairs
-
     def get_unique_segments(self):
         # Extract unique segments from the 'Current segment' column
         self._allSegments = self._fullData['Current segment'].unique()
@@ -166,3 +141,20 @@ class DataDivision:
         # Save the scaler to disc
         joblib.dump(scaler, 'scaler.pkl')
         self._scaler = scaler
+
+    def find_close_segments(self):
+        close_segments = set()  # Use a set to avoid duplicates
+        prev_segment = None  # Track the previous segment
+
+        for idx, row in self._fullData.iterrows():
+            current_segment = row["Current segment"]
+            
+            # Check if the segment changes
+            if prev_segment is not None and current_segment != prev_segment:
+                # Add the pair of segments in the original order
+                close_segments.add((prev_segment, current_segment))
+            
+            # Update previous segment
+            prev_segment = current_segment
+
+        self._closePairs = close_segments

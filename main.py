@@ -7,7 +7,7 @@ dataManager = DataDivision('michal.csv')
 
 aiManager = AI_Manager(20)
 
-# aiManager.createAI(dataManager._closePairs, dataManager._dictionaryData)
+aiManager.createAI(dataManager._closePairs, dataManager._dictionaryData)
 
 segments_to_traverse = ['14','18','22', '26','10']
 

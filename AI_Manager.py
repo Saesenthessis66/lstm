@@ -20,14 +20,14 @@ class AI_Manager:
 
     def createAI(self, close_segments, segment_dict):
 
-        for i in range (0,len(close_segments)):
+        for pair in close_segments:
 
             # Assign two close segments IDs 
-            # first_segment = close_segments[i][0]
-            # second_segment = close_segments[i][1]
+            first_segment = int(pair[0])
+            second_segment = int(pair[1])
 
-            first_segment = 10
-            second_segment = 14
+            # first_segment = 10
+            # second_segment = 14
 
             # Load data for two close segments
             df_first = segment_dict[str(first_segment)]
