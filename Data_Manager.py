@@ -1,7 +1,5 @@
 import pandas as pd
 import numpy as np
-import joblib
-from sklearn.preprocessing import MinMaxScaler
 
 class SegmentDataFrame(pd.DataFrame):
     # Override __getitem__ for custom behavior
@@ -17,13 +15,10 @@ class SegmentDataFrame(pd.DataFrame):
 class DataDivision:
     _dataFileName: str = ''
     _fullData = []
-    _interpolatedData = []
-    _closePairs = []
-    _dictionaryData = []
     _allSegments = []
-    _scaler = any
     _average_points_amount = {}
     _day_divided_data = []
+    _divided_data = []
 
     def __init__(self, dataFile: str):
         self._dataFileName = dataFile
@@ -33,6 +28,7 @@ class DataDivision:
         self.read_data_from_csv()
         self.get_unique_segments()
         self.count_average_point_amount()
+        self.find_jumps(3)
         self.divide_data_by_day()
         self._fullData.drop(columns=['Timestamp'],inplace=True)
 
@@ -49,6 +45,29 @@ class DataDivision:
         
         # Return data as a SegmentDataFrame instead of a regular DataFrame
         self._fullData = SegmentDataFrame(data)
+
+
+    def find_jumps(self, threshold):
+        segments = []
+        last_index = 0  # Start from the beginning of the dataset
+        
+        for i in range(1, len(self._fullData)):
+            x1, y1 = self._fullData.iloc[i-1][['X-coordinate', 'Y-coordinate']]
+            x2, y2 = self._fullData.iloc[i][['X-coordinate', 'Y-coordinate']]
+            
+            # Calculate Euclidean distance
+            distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+            
+            if distance > threshold:
+                # Append the segment from last_index to the current point
+                segments.append(self._fullData.iloc[last_index:i])
+                last_index = i  # Update the last index to the current point
+        
+        # Append the remaining data after the last jump
+        if last_index < len(self._fullData):
+            segments.append(self._fullData.iloc[last_index:])
+        
+        self._divided_data = segments
 
     def count_average_point_amount(self):
         # Initialize a dictionary to store segment averages
@@ -126,120 +145,7 @@ class DataDivision:
             daily_dataframes.append(group.reset_index(drop=True))
     
         self._day_divided_data = daily_dataframes
-    
-    def create_interpolated_dataframes(self):
-
-        # Initialize array that stores data for all segments
-        final_data = []
-
-        for i in range(0,len(self._allSegments)):
-
-            # Copy unaltered data from file
-            df = self._fullData.copy()
-
-            # Assign current segment from an array
-            X = self._allSegments[i]
-
-            # Filter data to segment X
-            df = df[df['Current segment'] == X]
-
-            # Initialize variable for computing average dataframe length  
-            avg_len = len(df)
-
-            # Set distance for max distance between two consecutive points
-            distance_threshold = 1
-
-            # Calculate Euclidean distance explicitly between each pair of consecutive points
-            df['Distance'] = np.sqrt(
-                (df['X-coordinate'] - df['X-coordinate'].shift(1))**2 + 
-                (df['Y-coordinate'] - df['Y-coordinate'].shift(1))**2
-            )
-
-            # Initialize list for segmented dataframes
-            dataframes = []
-            start_idx = 0
-
-            # Loop to split the dataframe based on the distance threshold
-            for idx in range(1, len(df)):
-                if df['Distance'].iloc[idx] > distance_threshold:
-                    segment_df = df.iloc[start_idx:idx].copy()  # Create a new segment
-                    dataframes.append(segment_df)               # Append segment to list
-                    start_idx = idx                             # Update start index for the next segment
-
-            # Append the last segment if any rows remain
-            if start_idx < len(df):
-                segment_df = df.iloc[start_idx:].copy()
-                dataframes.append(segment_df)
-
-            # Optionally remove the Distance column from each segment if no longer needed
-            for segment in dataframes:
-                segment.drop(columns=['Distance'], inplace=True)
-
-            # Compute average amount of points in one run in segment                      
-            avg_len /= len(dataframes) 
-
-            # Number of points to resample (you can adjust this number)
-            num_points = 100
-
-            # Interpolate each dataframe to have the same number of points
-            interpolated_dfs = []
-            for df in dataframes:
-                # Create a fixed range of values from 0 to 1 to act as a new "index"
-                resample_index = np.linspace(0, 1, num_points)
-                # Interpolate X and Y coordinates using this new index
-                df_interpolated = pd.DataFrame({
-                    'X-coordinate': np.interp(resample_index, np.linspace(0, 1, len(df)), df['X-coordinate']),
-                    'Y-coordinate': np.interp(resample_index, np.linspace(0, 1, len(df)), df['Y-coordinate']),
-                    'Heading': np.interp(resample_index, np.linspace(0, 1, len(df)), df['Heading'])
-                })
-                interpolated_dfs.append(df_interpolated)
-
-            # Concatenate and calculate the average for each coordinate across all dataframes
-            average_df = pd.concat(interpolated_dfs).groupby(level=0).mean()
-
-            # Append averaged data for segment in array
-            final_data.append(average_df)
-
-        self._interpolatedData = final_data 
 
     def get_unique_segments(self):
         # Extract unique segments from the 'Current segment' column
         self._allSegments = self._fullData['Current segment'].unique()
-
-    def create_segment_dictionary(self):
-
-        # Create a dictionary by zipping segment_ids and dataframes
-        segment_dict = {str(segment_id): df for segment_id, df in zip(self._allSegments, self._interpolatedData)}
-        self._dictionaryData = segment_dict
-
-    def create_scaler(self):
-        features = ['X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']
-        targets = ['X-coordinate', 'Y-coordinate', 'Heading']
-
-        # Create separate scalers for features and targets
-        feature_scaler = MinMaxScaler()
-        target_scaler = MinMaxScaler()
- 
-        feature_scaler.fit(self._fullData[features])
-        target_scaler.fit(self._fullData[targets])
-
-        # Save the scaler to disc
-        joblib.dump(feature_scaler, 'feature_scaler.pkl')
-        joblib.dump(target_scaler, 'target_scaler.pkl')
-
-    def find_close_segments(self):
-        close_segments = set()  # Use a set to avoid duplicates
-        prev_segment = None  # Track the previous segment
-
-        for idx, row in self._fullData.iterrows():
-            current_segment = row["Current segment"]
-            
-            # Check if the segment changes
-            if prev_segment is not None and current_segment != prev_segment:
-                # Add the pair of segments in the original order
-                close_segments.add((prev_segment, current_segment))
-            
-            # Update previous segment
-            prev_segment = current_segment
-
-        self._closePairs = close_segments
