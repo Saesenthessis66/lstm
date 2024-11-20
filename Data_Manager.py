@@ -29,7 +29,6 @@ class DataDivision:
         self.get_unique_segments()
         self.count_average_point_amount()
         self.find_jumps(3)
-        self.divide_data_by_day()
         self._fullData.drop(columns=['Timestamp'],inplace=True)
 
         
@@ -125,26 +124,6 @@ class DataDivision:
             avg_values[X] = int(avg_len)
 
         self._average_points_amount = avg_values
-
-    def divide_data_by_day(self):
-        # Ensure `_fullData` is populated with data
-        if self._fullData is None:
-            raise ValueError("Data not loaded. Please call `read_data_from_csv` first.")
-        
-        # Extract the data
-        data = self._fullData
-        
-        # Group by the date part of the Timestamp column
-        grouped_data = data.groupby(data['Timestamp'].dt.date)
-        
-        # Create a list to store dataframes for each day
-        daily_dataframes = []
-        
-        for date, group in grouped_data:
-            # The second element of the tuple (group) is the dataframe for that day
-            daily_dataframes.append(group.reset_index(drop=True))
-    
-        self._day_divided_data = daily_dataframes
 
     def get_unique_segments(self):
         # Extract unique segments from the 'Current segment' column
