@@ -7,6 +7,8 @@ import joblib
 import keras
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
+from sklearn.preprocessing import MinMaxScaler
+import matplotlib.pyplot as plt
 
 class AI_Manager:
 
@@ -18,53 +20,170 @@ class AI_Manager:
         self._scaler = joblib.load('scaler.pkl')
 
 
-    def createAI(self, close_segments, segment_dict):
+    def createLSTM(self, data):
+        features = ['X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']
+        targets = ['X-coordinate', 'Y-coordinate', 'Heading']
+        all_columns = features  # Features and targets overlap
 
-        for pair in close_segments:
+        # Initialize a single scaler
+        scaler = MinMaxScaler()
 
-            # Assign two close segments IDs 
-            first_segment = int(pair[0])
-            second_segment = int(pair[1])
+        # Normalize the data (combine features and targets for scaling)
+        scaler.fit(data[1][all_columns])
+        joblib.dump(scaler, 'scaler.pkl')
 
-            # first_segment = 10
-            # second_segment = 14
+        data[0][all_columns] = scaler.transform(data[0][all_columns])
+        data[1][all_columns] = scaler.transform(data[1][all_columns])
 
-            # Load data for two close segments
-            df_first = segment_dict[str(first_segment)]
-            df_second = segment_dict[str(second_segment)]
+        # Create sequences
+        sequence_length = 10  # Number of timesteps in each sequence
+        X_train, X_val, y_train, y_val = [], [], [], []
 
-            # Concatinate data for two close segments
-            df = pd.concat([df_first, df_second], ignore_index=True)
+        for i in range(len(data[1]) - sequence_length):
+            X_train.append(data[1][features].iloc[i:i + sequence_length].values)
+            y_train.append(data[1][targets].iloc[i + sequence_length].values)
 
-            # Normalize the data 
-            df_scaled = df.copy()
-            df_scaled = self._scaler.transform(df)
+        for i in range(len(data[0]) - sequence_length):
+            X_val.append(data[0][features].iloc[i:i + sequence_length].values)
+            y_val.append(data[0][targets].iloc[i + sequence_length].values)
 
-            # Create sequences (using df_scaled for features and df_target_scaled for targets)
-            def create_sequences(data, n_steps):
-                X, y = [], []
-                for i in range(len(data) - n_steps):
-                    X.append(data[i:i+n_steps])
-                    y.append(data[i+n_steps])
-                return np.array(X), np.array(y)
+        X_train, X_val, y_train, y_val = np.array(X_train), np.array(X_val), np.array(y_train), np.array(y_val)
 
-            # Initialize steps amount for LSTM network
-            self._n_steps = 20
-            X, y = create_sequences(df_scaled, self._n_steps)
+        # Build the LSTM model
+        model = Sequential([
+            LSTM(64, input_shape=(sequence_length, len(features)), return_sequences=False),
+            Dense(32, activation='relu'),
+            Dense(3)  # Output layer for X, Y, Heading
+        ])
 
-            model = Sequential([
-                LSTM(5, input_shape=(self._n_steps, 3)),
-                Dense(32, activation='relu'),
-                Dense(32, activation='relu'),
-                Dense(3)
-            ])
-            optimizer = tf.keras.optimizers.Adam(learning_rate=0.001, clipvalue=1.0)
-            model.compile(optimizer=optimizer, loss='mae')
+        model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+        model.summary()
 
-            # Train the model
-            model.fit(X, y, epochs=1000, batch_size=32, verbose=1)
+        # Train the model
+        history = model.fit(
+            X_train, y_train,
+            epochs=50,
+            batch_size=32,
+            validation_data=(X_val, y_val),
+            verbose=2
+        )
 
-            model.save('kerases/segments_' + str(first_segment) + '_' + str(second_segment) + '.keras')
+        model.save('model.keras')
+
+        # Evaluate on validation set
+        val_loss, val_mae = model.evaluate(X_val, y_val, verbose=2)
+        print(f"Validation Loss: {val_loss}, Validation MAE: {val_mae}")
+
+        # Make predictions
+        predictions = model.predict(X_val)
+
+        # Add a dummy column for 'Current segment' since it was included in the scaler fitting
+        dummy_column = np.zeros((y_val.shape[0], 1))  # Create a column of zeros
+        predictions_with_dummy = np.hstack([predictions, dummy_column])  # Add dummy column to predictions
+        y_val_with_dummy = np.hstack([y_val, dummy_column])  # Add dummy column to true values
+
+        # Inverse transform using the scaler
+        predictions_original = scaler.inverse_transform(predictions_with_dummy)[:, :3]  # Extract only the original 3 columns
+        y_val_original = scaler.inverse_transform(y_val_with_dummy)[:, :3]  # Extract only the original 3 columns
+
+        # Extract specific columns for individual plots
+        true_x = y_val_original[:, 0]
+        predicted_x = predictions_original[:, 0]
+
+        true_y = y_val_original[:, 1]
+        predicted_y = predictions_original[:, 1]
+
+        true_heading = y_val_original[:, 2]
+        predicted_heading = predictions_original[:, 2]
+
+        # Plot X-coordinate
+        plt.figure(figsize=(12, 4))
+        plt.subplot(1, 3, 1)
+        plt.plot(true_x, label='True X')
+        plt.plot(predicted_x, label='Predicted X', linestyle='dashed')
+        plt.title('X-coordinate')
+        plt.legend()
+
+        # Plot Y-coordinate
+        plt.subplot(1, 3, 2)
+        plt.plot(true_y, label='True Y')
+        plt.plot(predicted_y, label='Predicted Y', linestyle='dashed')
+        plt.title('Y-coordinate')
+        plt.legend()
+
+        # Plot Heading
+        plt.subplot(1, 3, 3)
+        plt.plot(true_heading, label='True Heading')
+        plt.plot(predicted_heading, label='Predicted Heading', linestyle='dashed')
+        plt.title('Heading')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.show()
+
+
+    def test_ai(self, input_data, segments_to_traverse, avg_points_in_segments):
+        initial_sequence = []
+
+        # Extract the initial data from the first segment path in segment_dict
+        initial_data = input_data
+
+        # Scale the initial data using the scaler
+        scaled_data = initial_data.copy()
+        scaled_data = self._scaler.transform(initial_data)
+
+        # Prepare the initial sequence of data points from the scaled data
+        for step in range(self._n_steps):
+            initial_sequence.append(scaled_data[step])
+
+        # Load the single model
+        model = keras.models.load_model('model.keras')
+
+        # Placeholder for all predicted data
+        simulated_data_sequence = []
+
+        # Loop through TMS data and predict for each segment
+        for segment in segments_to_traverse:
+            # Placeholder for predictions in the current segment
+            predicted_data = []
+
+            # Predict points for the current segment
+            for _ in range(avg_points_in_segments[segment]):
+                # Create the input dataset for the model
+                sequence_df = pd.DataFrame(initial_sequence)
+                sequence_values = sequence_df.values.astype('float32')
+
+                prediction_input = self.create_dataset(sequence_values)
+                predicted_point = model.predict(prediction_input)
+
+                # Extract x, y, and heading from the predicted point
+                x, y, heading = predicted_point[0]
+
+                # Append predicted values with the current segment value
+                predicted_data.append([x, y, heading, segment])
+
+                # Update the sequence for the next prediction
+                initial_sequence.append(predicted_point[0])
+                initial_sequence.pop(0)  # Maintain the sequence length (_n_steps)
+
+            # Convert the current segment predictions into a DataFrame
+            segment_df = pd.DataFrame(
+                predicted_data, columns=["x-coordinate", "y-coordinate", "heading", "segment"]
+            )
+
+            # Append the segment DataFrame to the overall simulated data sequence
+            simulated_data_sequence.append(segment_df)
+
+        # Combine all segment DataFrames into a single DataFrame
+        full_simulated_data = pd.concat(simulated_data_sequence, ignore_index=True)
+
+        # Transform the simulated data back to the original scale (if needed)
+        full_simulated_data[["x-coordinate", "y-coordinate", "heading"]] = self._scaler.inverse_transform(
+            full_simulated_data[["x-coordinate", "y-coordinate", "heading"]]
+        )
+
+        return full_simulated_data
+
 
     def create_dataset(self, dataset):
 

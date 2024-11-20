@@ -22,6 +22,8 @@ class DataDivision:
     _dictionaryData = []
     _allSegments = []
     _scaler = any
+    _average_points_amount = {}
+    _day_divided_data = []
 
     def __init__(self, dataFile: str):
         self._dataFileName = dataFile
@@ -29,23 +31,101 @@ class DataDivision:
 
     def setUp(self):
         self.read_data_from_csv()
-        self.create_scaler()
         self.get_unique_segments()
-        self.create_interpolated_dataframes()
-        self.create_segment_dictionary()
-        self.find_close_segments()
+        self.count_average_point_amount()
+        self.divide_data_by_day()
+        self._fullData.drop(columns=['Timestamp'],inplace=True)
+
         
     def read_data_from_csv(self):
         data = pd.read_csv(self._dataFileName, low_memory=False)
-        data = data[['X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']]
+        data = data[['Timestamp', 'X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']]
         data['X-coordinate'] = pd.to_numeric(data['X-coordinate'], errors='coerce')
         data['Y-coordinate'] = pd.to_numeric(data['Y-coordinate'], errors='coerce')
         data['Heading'] = pd.to_numeric(data['Heading'], errors='coerce')
         data['Current segment'] = pd.to_numeric(data['Current segment'], errors='coerce')
         data = data.dropna()
+        data['Timestamp'] = pd.to_datetime(data['Timestamp'])
         
         # Return data as a SegmentDataFrame instead of a regular DataFrame
         self._fullData = SegmentDataFrame(data)
+
+    def count_average_point_amount(self):
+        # Initialize a dictionary to store segment averages
+        avg_values = {}
+
+        # Loop through all segments
+        for i in range(0, len(self._allSegments)):
+            # Copy unaltered data from file
+            df = self._fullData.copy()
+
+            # Assign current segment from an array
+            X = self._allSegments[i]
+
+            # Filter data to segment X
+            df = df[df['Current segment'] == X]
+
+            # Check if the segment data is empty
+            if df.empty:
+                avg_values[X] = 0  # Set average to 0 if no data
+                continue
+
+            # Set distance for max distance between two consecutive points
+            distance_threshold = 1
+
+            # Calculate Euclidean distance explicitly between each pair of consecutive points
+            df['Distance'] = np.sqrt(
+                (df['X-coordinate'] - df['X-coordinate'].shift(1))**2 + 
+                (df['Y-coordinate'] - df['Y-coordinate'].shift(1))**2
+            )
+
+            # Initialize list for segmented dataframes
+            dataframes = []
+            start_idx = 0
+
+            # Loop to split the dataframe based on the distance threshold
+            for idx in range(1, len(df)):
+                if df['Distance'].iloc[idx] > distance_threshold:
+                    segment_df = df.iloc[start_idx:idx].copy()  # Create a new segment
+                    dataframes.append(segment_df)               # Append segment to list
+                    start_idx = idx                             # Update start index for the next segment
+
+            # Append the last segment if any rows remain
+            if start_idx < len(df):
+                segment_df = df.iloc[start_idx:].copy()
+                dataframes.append(segment_df)
+
+            # Optionally remove the Distance column from each segment if no longer needed
+            for segment in dataframes:
+                segment.drop(columns=['Distance'], inplace=True)
+
+            # Compute average amount of points in one run in segment                      
+            avg_len = len(df) / len(dataframes) if dataframes else 0
+
+            # Store the result in the dictionary with the segment as the key
+            avg_values[X] = int(avg_len)
+
+        self._average_points_amount = avg_values
+
+    def divide_data_by_day(self):
+        # Ensure `_fullData` is populated with data
+        if self._fullData is None:
+            raise ValueError("Data not loaded. Please call `read_data_from_csv` first.")
+        
+        # Extract the data
+        data = self._fullData
+        
+        # Group by the date part of the Timestamp column
+        grouped_data = data.groupby(data['Timestamp'].dt.date)
+        
+        # Create a list to store dataframes for each day
+        daily_dataframes = []
+        
+        for date, group in grouped_data:
+            # The second element of the tuple (group) is the dataframe for that day
+            daily_dataframes.append(group.reset_index(drop=True))
+    
+        self._day_divided_data = daily_dataframes
     
     def create_interpolated_dataframes(self):
 
@@ -133,14 +213,19 @@ class DataDivision:
         self._dictionaryData = segment_dict
 
     def create_scaler(self):
-        # Initialize and fit the scaler
-        scaler = MinMaxScaler()
-        columns_to_scale = ['X-coordinate', 'Y-coordinate', 'Heading']
-        scaler.fit(self._fullData[columns_to_scale])  # Fit only on the specified columns
+        features = ['X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']
+        targets = ['X-coordinate', 'Y-coordinate', 'Heading']
+
+        # Create separate scalers for features and targets
+        feature_scaler = MinMaxScaler()
+        target_scaler = MinMaxScaler()
+ 
+        feature_scaler.fit(self._fullData[features])
+        target_scaler.fit(self._fullData[targets])
 
         # Save the scaler to disc
-        joblib.dump(scaler, 'scaler.pkl')
-        self._scaler = scaler
+        joblib.dump(feature_scaler, 'feature_scaler.pkl')
+        joblib.dump(target_scaler, 'target_scaler.pkl')
 
     def find_close_segments(self):
         close_segments = set()  # Use a set to avoid duplicates
