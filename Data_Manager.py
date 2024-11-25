@@ -19,6 +19,7 @@ class DataDivision:
     _average_points_amount = {}
     _day_divided_data = []
     _divided_data = []
+    _segment_boundaries = {}
 
     def __init__(self, dataFile: str):
         self._dataFileName = dataFile
@@ -26,25 +27,25 @@ class DataDivision:
 
     def setUp(self):
         self.read_data_from_csv()
-        self.get_unique_segments()
-        self.count_average_point_amount()
+        self.get_segment_boundaries()
         self.find_jumps(3)
         self._fullData.drop(columns=['Timestamp'],inplace=True)
+        self._divided_data = sorted(self._divided_data, key=len)
 
         
     def read_data_from_csv(self):
         data = pd.read_csv(self._dataFileName, low_memory=False)
-        data = data[['Timestamp', 'X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']]
+        data = data[['Timestamp', 'X-coordinate', 'Y-coordinate', 'Heading', 'Current segment','Going to ID']]
         data['X-coordinate'] = pd.to_numeric(data['X-coordinate'], errors='coerce')
         data['Y-coordinate'] = pd.to_numeric(data['Y-coordinate'], errors='coerce')
         data['Heading'] = pd.to_numeric(data['Heading'], errors='coerce')
+        data['Going to ID'] = pd.to_numeric(data['Going to ID'], errors='coerce')
         data['Current segment'] = pd.to_numeric(data['Current segment'], errors='coerce')
         data = data.dropna()
         data['Timestamp'] = pd.to_datetime(data['Timestamp'])
         
         # Return data as a SegmentDataFrame instead of a regular DataFrame
         self._fullData = SegmentDataFrame(data)
-
 
     def find_jumps(self, threshold):
         segments = []
@@ -68,63 +69,25 @@ class DataDivision:
         
         self._divided_data = segments
 
-    def count_average_point_amount(self):
-        # Initialize a dictionary to store segment averages
-        avg_values = {}
+    def get_segment_boundaries(self):
+        segments = self._fullData['Current segment'].unique()  # Get unique segment IDs
+        self._allSegments = segments
+        segment_boundaries = {}
 
-        # Loop through all segments
-        for i in range(0, len(self._allSegments)):
-            # Copy unaltered data from file
-            df = self._fullData.copy()
+        for segment in segments:
+            # Filter rows belonging to the current segment
+            segment_data = self._fullData[self._fullData['Current segment'] == segment]
 
-            # Assign current segment from an array
-            X = self._allSegments[i]
+            # Extract start and end points
+            start_index = segment_data.index[0]
+            end_index = segment_data.index[-1]
+            start_point = segment_data.loc[start_index, ['X-coordinate', 'Y-coordinate']].tolist()
+            end_point = segment_data.loc[end_index, ['X-coordinate', 'Y-coordinate']].tolist()
 
-            # Filter data to segment X
-            df = df[df['Current segment'] == X]
+            # Store results in the dictionary
+            segment_boundaries[segment] = {
+                'start_coordinates': start_point,
+                'end_coordinates': end_point
+            }
 
-            # Check if the segment data is empty
-            if df.empty:
-                avg_values[X] = 0  # Set average to 0 if no data
-                continue
-
-            # Set distance for max distance between two consecutive points
-            distance_threshold = 1
-
-            # Calculate Euclidean distance explicitly between each pair of consecutive points
-            df['Distance'] = np.sqrt(
-                (df['X-coordinate'] - df['X-coordinate'].shift(1))**2 + 
-                (df['Y-coordinate'] - df['Y-coordinate'].shift(1))**2
-            )
-
-            # Initialize list for segmented dataframes
-            dataframes = []
-            start_idx = 0
-
-            # Loop to split the dataframe based on the distance threshold
-            for idx in range(1, len(df)):
-                if df['Distance'].iloc[idx] > distance_threshold:
-                    segment_df = df.iloc[start_idx:idx].copy()  # Create a new segment
-                    dataframes.append(segment_df)               # Append segment to list
-                    start_idx = idx                             # Update start index for the next segment
-
-            # Append the last segment if any rows remain
-            if start_idx < len(df):
-                segment_df = df.iloc[start_idx:].copy()
-                dataframes.append(segment_df)
-
-            # Optionally remove the Distance column from each segment if no longer needed
-            for segment in dataframes:
-                segment.drop(columns=['Distance'], inplace=True)
-
-            # Compute average amount of points in one run in segment                      
-            avg_len = len(df) / len(dataframes) if dataframes else 0
-
-            # Store the result in the dictionary with the segment as the key
-            avg_values[X] = int(avg_len)
-
-        self._average_points_amount = avg_values
-
-    def get_unique_segments(self):
-        # Extract unique segments from the 'Current segment' column
-        self._allSegments = self._fullData['Current segment'].unique()
+        self._segment_boundaries =  segment_boundaries

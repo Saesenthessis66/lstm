@@ -3,165 +3,163 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 import pandas as pd
 import numpy as np
 import joblib
-import keras
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import LSTM, Dense, Dropout
 from sklearn.preprocessing import MinMaxScaler
-
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.layers import BatchNormalization
 class AI_Manager:
 
-    _n_steps : int = 20
-    _scaler = any
+    _scaler_X : MinMaxScaler
+    _scaler_y : MinMaxScaler
 
-    def __init__(self, steps : int):
+    def __init__(self, steps: int,):
         self._n_steps = steps
-        self._scaler = joblib.load('scaler.pkl')
 
-    def createLSTM(self, data):
-        features = ['X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']
-        targets = ['X-coordinate', 'Y-coordinate', 'Heading']
-        all_columns = features  # Features and targets overlap
 
-        # Initialize a single scaler
-        scaler = MinMaxScaler()
+    def preprocess_data(self, train_df, val_df):
+        # Select features and targets
+        input_columns = ['X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']
+        output_columns = ['X-coordinate', 'Y-coordinate', 'Heading']
 
-        # Normalize the data (combine features and targets for scaling)
-        scaler.fit(data[1][all_columns])
-        joblib.dump(scaler, 'scaler.pkl')
+        X_train = train_df[input_columns].values
+        y_train = train_df[output_columns].values
+        X_val = val_df[input_columns].values
+        y_val = val_df[output_columns].values
 
-        data[0][all_columns] = scaler.transform(data[0][all_columns])
-        data[1][all_columns] = scaler.transform(data[1][all_columns])
+        # Initialize separate scalers
+        self._scaler_X = MinMaxScaler()  # For input features
+        self._scaler_y = MinMaxScaler()  # For target values
+
+        # Fit and transform input data
+        X_train = self._scaler_X.fit_transform(X_train)
+        X_val = self._scaler_X.transform(X_val)
+
+        # Fit and transform target data
+        y_train = self._scaler_y.fit_transform(y_train)
+        y_val = self._scaler_y.transform(y_val)
 
         # Create sequences
-        sequence_length = 20  # Number of timesteps in each sequence
-        X_train, X_val, y_train, y_val = [], [], [], []
+        def create_sequences(data, target, seq_length):
+            X_seq, y_seq = [], []
+            for i in range(len(data) - seq_length):
+                X_seq.append(data[i:i+seq_length])
+                y_seq.append(target[i+seq_length])
+            return np.array(X_seq), np.array(y_seq)
 
-        for i in range(len(data[1]) - sequence_length):
-            X_train.append(data[1][features].iloc[i:i + sequence_length].values)
-            y_train.append(data[1][targets].iloc[i + sequence_length].values)
+        self.X_train_seq, self.y_train_seq = create_sequences(X_train, y_train, self._n_steps)
+        self.X_val_seq, self.y_val_seq = create_sequences(X_val, y_val, self._n_steps)
+        
+        joblib.dump(self._scaler_X, 'scaler_X.pkl')
+        joblib.dump(self._scaler_y, 'scaler_y.pkl')
 
-        for i in range(len(data[0]) - sequence_length):
-            X_val.append(data[0][features].iloc[i:i + sequence_length].values)
-            y_val.append(data[0][targets].iloc[i + sequence_length].values)
 
-        X_train, X_val, y_train, y_val = np.array(X_train), np.array(X_val), np.array(y_train), np.array(y_val)
+    def train_model(self):
 
-        # Build the LSTM model
         model = Sequential([
-            LSTM(16, input_shape=(sequence_length, len(features)), return_sequences=False),
+            LSTM(64, input_shape=(self._n_steps, self.X_train_seq.shape[2]), return_sequences=False),
             Dense(32, activation='relu'),
-            Dense(32, activation='relu'),
+            Dense(64, activation='sigmoid'),
             Dense(3)  # Output layer for X, Y, Heading
         ])
 
-        model.compile(optimizer='adam', loss='mse', metrics=['mse'])
-        model.summary()
+        model.compile(optimizer='adam', loss='mse', metrics=['mae'])
 
-        # Train the model
+        early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
         history = model.fit(
-            X_train, y_train,
-            epochs=250,
-            batch_size=32,
-            validation_data=(X_val, y_val),
-            verbose=2
+            self.X_train_seq, self.y_train_seq,
+            validation_data=(self.X_val_seq, self.y_val_seq),
+            epochs=50, batch_size=32, callbacks=[early_stopping], verbose=1
         )
-
         model.save('model.keras')
 
-        # Evaluate on validation set
-        val_loss, val_mae = model.evaluate(X_val, y_val, verbose=2)
-        print(f"Validation Loss: {val_loss}, Validation MAE: {val_mae}")
 
-        # # Make predictions
-        # predictions = model.predict(X_val)
+    def predict_route(self, df, tms_data, segment_boundaries):
+        """
+        Predict the route using the AI model with conditions for switching to the next segment.
 
-        # # Add a dummy column for 'Current segment' since it was included in the scaler fitting
-        # dummy_column = np.zeros((y_val.shape[0], 1))  # Create a column of zeros
-        # predictions_with_dummy = np.hstack([predictions, dummy_column])  # Add dummy column to predictions
-        # y_val_with_dummy = np.hstack([y_val, dummy_column])  # Add dummy column to true values
+        Args:
+            df: DataFrame containing input data.
+            tms_data: List of segment identifiers.
+            segment_boundaries: Dictionary of segment start and end coordinates.
 
-        # # Inverse transform using the scaler
-        # predictions_original = scaler.inverse_transform(predictions_with_dummy)[:, :3]  # Extract only the original 3 columns
-        # y_val_original = scaler.inverse_transform(y_val_with_dummy)[:, :3]  # Extract only the original 3 columns
+        Returns:
+            A DataFrame with predicted values.
+        """
+        # Load scalers and model
+        self._scaler_X = joblib.load('scaler_X.pkl')
+        self._scaler_y = joblib.load('scaler_y.pkl')
+        model = load_model('model.keras')
 
-        # # Extract specific columns for individual plots
-        # true_x = y_val_original[:, 0]
-        # predicted_x = predictions_original[:, 0]
+        # Use the last `n_steps` rows as initial input data
+        df = df[-self._n_steps:].copy()
+        predictions = []
 
-        # true_y = y_val_original[:, 1]
-        # predicted_y = predictions_original[:, 1]
+        print(df)
 
-        # true_heading = y_val_original[:, 2]
-        # predicted_heading = predictions_original[:, 2]
+        for idx, curr_segment in enumerate(tms_data):
+            # Get segment boundaries
+            boundaries = segment_boundaries[curr_segment]
+            start_coords = boundaries['start_coordinates']
+            end_coords = boundaries['end_coordinates']
 
-        # # Plot X-coordinate
-        # plt.figure(figsize=(12, 4))
-        # plt.subplot(1, 3, 1)
-        # plt.plot(true_x, label='True X')
-        # plt.plot(predicted_x, label='Predicted X', linestyle='dashed')
-        # plt.title('X-coordinate')
-        # plt.legend()
+            print(f"Processing Segment {curr_segment}: Start {start_coords}, End {end_coords}")
 
-        # # Plot Y-coordinate
-        # plt.subplot(1, 3, 2)
-        # plt.plot(true_y, label='True Y')
-        # plt.plot(predicted_y, label='Predicted Y', linestyle='dashed')
-        # plt.title('Y-coordinate')
-        # plt.legend()
+            # Initialize variables for tracking repeated predictions and movement
+            repeated_predictions = 0
+            max_repeats = 5  # Threshold for identical predictions
+            previous_point = None
 
-        # # Plot Heading
-        # plt.subplot(1, 3, 3)
-        # plt.plot(true_heading, label='True Heading')
-        # plt.plot(predicted_heading, label='Predicted Heading', linestyle='dashed')
-        # plt.title('Heading')
-        # plt.legend()
-
-        # plt.tight_layout()
-        # plt.show()
-
-
-    def predict_route(self, df, tms_data, avg_points_amount):
-
-        model = keras.saving.load_model("model.keras")
-
-        # Initialize the dataframe with the last n_steps of data
-        data = df[-self._n_steps:]
-        df = pd.DataFrame(data)
-
-        # Loop through the segments in tms_data
-        for segment in tms_data:
-            curr_segment = segment
-
-            # Determine the number of predictions to generate for the current segment
-            if curr_segment == tms_data[0]:
-                leng = avg_points_amount[curr_segment] - self._n_steps
-            else:
-                leng = avg_points_amount[curr_segment]
-
-            # Generate predictions for the current segment
-            for _ in range(leng):
-                # Prepare the input data
-                data = df[-self._n_steps:]
-                dataframe = pd.DataFrame(data)
-                scaled_data = self._scaler.transform(dataframe)
-                input_data = np.expand_dims(scaled_data, axis=0)  # Shape: (1, n_steps, features)
+            while True:
+                # Prepare the latest input data
+                data = df[-self._n_steps:].copy()
+                scaled_data = self._scaler_X.transform(
+                    data[['X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']].values
+                )
+                input_data = np.expand_dims(scaled_data, axis=0)
 
                 # Predict the next step
                 predicted_scaled = model.predict(input_data)
+                predicted_original = self._scaler_y.inverse_transform(predicted_scaled)
 
-                # Add the current segment value to the prediction
-                placeholder = np.full((predicted_scaled.shape[0], 1), curr_segment)  # Add the current segment value
-                augmented_data = np.hstack((predicted_scaled, placeholder))  # Shape: (1, features+1)
-
-                # Inverse transform to get the original scale
-                predicted_original = self._scaler.inverse_transform(augmented_data)
-
-                # Keep only the first 3 columns (X, Y, Heading) and add segment
-                predicted_original = predicted_original[:, :3]  # Keep X, Y, Heading
+                # Create a prediction DataFrame
                 result_df = pd.DataFrame(predicted_original, columns=['X-coordinate', 'Y-coordinate', 'Heading'])
-                result_df['Current segment'] = curr_segment  # Add segment information
+                result_df['Current segment'] = curr_segment
 
-                # Append the prediction to the main DataFrame
+                # Append the prediction to the sequence and update input data
+                predictions.append(result_df)
                 df = pd.concat([df, result_df], ignore_index=True)
 
-        return df
+                # Analyze the predicted point
+                predicted_point = result_df.iloc[-1][['X-coordinate', 'Y-coordinate']].values
+                distance_to_end = np.linalg.norm(predicted_point - end_coords)
+                print(f"Predicted point: {predicted_point}, Distance to endpoint: {distance_to_end:.4f}")
+                if previous_point is not None:
+                    previous_distance_to_end = np.linalg.norm(previous_point - end_coords)
+
+                # Check for repeated predictions
+                if previous_point is not None:
+                    if np.allclose(predicted_point, previous_point, atol=0.1):
+                        repeated_predictions += 1
+                    elif previous_distance_to_end < distance_to_end: 
+                        repeated_predictions += 1
+                    else:
+                        repeated_predictions = 0  # Reset if the prediction changes
+                previous_point = predicted_point
+
+                # Switch segment if repeated predictions or moving away
+                if repeated_predictions >= max_repeats:
+                    print(f"Switching to the next segment due to repeated predictions.")
+                    break
+
+                # Check if the predicted point is close enough to the segment's endpoint
+                if distance_to_end <= 0.3:
+                    print(f"Reached the endpoint of Segment {curr_segment}. Moving to next segment.")
+                    break
+
+        # Combine all predictions into a single DataFrame
+        predicted_df = pd.concat(predictions, ignore_index=True)
+        return predicted_df
+
+
