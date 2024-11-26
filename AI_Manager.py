@@ -21,20 +21,39 @@ class AI_Manager:
     def __init__(self, steps: int,):
         self._n_steps = steps
 
+    def validate_segments(self, df):
+        known_segments = set(self.segment_encoder.categories_[0])
+        prediction_segments = set(df['Current segment'].unique())
+
+        unknown_segments = prediction_segments - known_segments
+        if unknown_segments:
+            print(f"Warning: The following segments were not seen during training and will be ignored: {unknown_segments}")
+
+
     def preprocess_data(self, train_df, val_df):
+        # Select features and targets
         input_columns = ['X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']
         output_columns = ['X-coordinate', 'Y-coordinate', 'Heading']
 
-        # Separate `Current segment` for encoding
+        X_train = train_df[input_columns].values
+        y_train = train_df[output_columns].values
+        X_val = val_df[input_columns].values
+        y_val = val_df[output_columns].values
+
+        # Initialize separate scalers
+        self._scaler_X = MinMaxScaler()  # For input features
+        self._scaler_y = MinMaxScaler()  # For target values
+
+        # One-hot encoding for `Current segment` with `handle_unknown='ignore'`
+        self.segment_encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')  # Enable handling unknown categories
         segment_train = train_df[['Current segment']]
         segment_val = val_df[['Current segment']]
 
-        # One-hot encoding for `Current segment`
-        self.segment_encoder = OneHotEncoder(sparse_output=False)
+        # Fit and transform the encoder
         segment_train_encoded = self.segment_encoder.fit_transform(segment_train)
         segment_val_encoded = self.segment_encoder.transform(segment_val)
-        joblib.dump(self.segment_encoder, 'segment_encoder.pkl')  # Save the encoder    
-        # Scale other features
+
+        # Scale the other features
         other_train_features = train_df[['X-coordinate', 'Y-coordinate', 'Heading']]
         other_val_features = val_df[['X-coordinate', 'Y-coordinate', 'Heading']]
 
@@ -42,7 +61,7 @@ class AI_Manager:
         X_train_scaled = self._scaler_X.fit_transform(other_train_features)
         X_val_scaled = self._scaler_X.transform(other_val_features)
 
-        # Concatenate scaled features and encoded segments
+        # Concatenate scaled features and one-hot-encoded segment
         X_train = np.hstack([X_train_scaled, segment_train_encoded])
         X_val = np.hstack([X_val_scaled, segment_val_encoded])
 
@@ -60,6 +79,11 @@ class AI_Manager:
 
         self.X_train_seq, self.y_train_seq = create_sequences(X_train, y_train, self._n_steps)
         self.X_val_seq, self.y_val_seq = create_sequences(X_val, y_val, self._n_steps)
+
+        # Save the OneHotEncoder and scalers
+        joblib.dump(self.segment_encoder, 'segment_encoder.pkl')  # Save the encoder
+        joblib.dump(self._scaler_X, 'scaler_X.pkl')
+        joblib.dump(self._scaler_y, 'scaler_y.pkl')
 
     def train_model(self):
         # Input layer
@@ -101,9 +125,9 @@ class AI_Manager:
         # Load scalers and model
         self._scaler_X = joblib.load('scaler_X.pkl')
         self._scaler_y = joblib.load('scaler_y.pkl')
-        self.segment_encoder = joblib.load('segment_encoder.pkl')  # Save and load the encoder
+        self.segment_encoder = joblib.load('segment_encoder.pkl')  # Load the encoder
         model = load_model('model.keras')
-
+        
         # Use the last `n_steps` rows as initial input data
         df = df[-self._n_steps:].copy()
         predictions = []
@@ -111,8 +135,11 @@ class AI_Manager:
         for idx, curr_segment in enumerate(tms_data):
             # Get segment boundaries
             boundaries = segment_boundaries[curr_segment]
-            start_coords = boundaries['start_coordinates']
             end_coords = boundaries['end_coordinates']
+            
+            # Variables to track consecutive predictions moving away from endpoint
+            previous_distance_to_end = None
+            consecutive_moving_away = 0
 
             while True:
                 # Prepare the latest input data
@@ -136,15 +163,33 @@ class AI_Manager:
                 predictions.append(result_df)
                 df = pd.concat([df, result_df], ignore_index=True)
 
-                # Check distance to endpoint and segment transition logic (unchanged)
+                # Analyze the predicted point
                 predicted_point = result_df.iloc[-1][['X-coordinate', 'Y-coordinate']].values
                 distance_to_end = np.linalg.norm(predicted_point - end_coords)
+                print(f"Predicted point: {predicted_point}, Distance to endpoint: {distance_to_end:.4f}")
+
+                # Check if the predicted point is close enough to the segment's endpoint
                 if distance_to_end <= 0.3:
                     print(f"Reached the endpoint of Segment {curr_segment}. Moving to next segment.")
+                    break
+
+                # Check if the predicted point is moving away from the endpoint
+                if previous_distance_to_end is not None:
+                    if distance_to_end > previous_distance_to_end:
+                        consecutive_moving_away += 1
+                        print(f"Point is moving away from endpoint. Count: {consecutive_moving_away}")
+                    else:
+                        consecutive_moving_away = 0  # Reset if moving closer
+
+                # Update previous distance
+                previous_distance_to_end = distance_to_end
+
+                # Switch segment if moving away for 2 consecutive points
+                if consecutive_moving_away >= 2:
+                    print(f"Switching to the next segment due to consecutive moving-away points.")
                     break
 
         # Combine all predictions into a single DataFrame
         predicted_df = pd.concat(predictions, ignore_index=True)
         return predicted_df
-
 
