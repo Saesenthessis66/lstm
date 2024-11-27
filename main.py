@@ -19,7 +19,7 @@ tms_data = [7.0,39.0, 15.0, 47.0, 19.0, 55.0, 51.0, 27.0, 63.0]
 df = dataManager._fullData[233:254]
 avg_points_amount = dataManager._average_points_amount
 
-predicted = aiManager.predict_route(df, tms_data, dataManager._segment_boundaries)
+predicted = aiManager.predict_route(df, tms_data)
 
 plt.scatter(dataManager._divided_data[0]['X-coordinate'],dataManager._divided_data[0]['Y-coordinate'])
 plt.scatter(predicted['X-coordinate'],predicted['Y-coordinate'], color = 'red')

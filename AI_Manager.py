@@ -1,25 +1,27 @@
 import os
+
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
 import pandas as pd
 import numpy as np
 import joblib
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+import json 
+
 from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.regularizers import l2
-from tensorflow.keras.layers import BatchNormalization
 from sklearn.preprocessing import OneHotEncoder
-from tensorflow.keras.layers import Input, Concatenate
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import load_model, Model
+from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout
+
 class AI_Manager:
 
     _scaler_X : MinMaxScaler
     _scaler_y : MinMaxScaler
+    _segment_boundaries : []
 
     def __init__(self, steps: int,):
         self._n_steps = steps
+        self.load_segment_boundaries()
 
     def validate_segments(self, df):
         known_segments = set(self.segment_encoder.categories_[0])
@@ -121,7 +123,7 @@ class AI_Manager:
         model.save('model.keras')
 
 
-    def predict_route(self, df, tms_data, segment_boundaries):
+    def predict_route(self, df, tms_data):
         # Load scalers and model
         self._scaler_X = joblib.load('scaler_X.pkl')
         self._scaler_y = joblib.load('scaler_y.pkl')
@@ -134,7 +136,7 @@ class AI_Manager:
 
         for idx, curr_segment in enumerate(tms_data):
             # Get segment boundaries
-            boundaries = segment_boundaries[curr_segment]
+            boundaries = self._segment_boundaries[str(curr_segment)]
             end_coords = boundaries['end_coordinates']
             
             # Variables to track consecutive predictions moving away from endpoint
@@ -193,3 +195,11 @@ class AI_Manager:
         predicted_df = pd.concat(predictions, ignore_index=True)
         return predicted_df
 
+    def load_segment_boundaries(self):
+        try:
+            with open('segment_boundaries.txt', 'r') as file:
+                segment_boundaries = json.load(file)
+            print(f"Segment boundaries successfully read from {'segment_boundaries.txt'}")
+            self._segment_boundaries = segment_boundaries
+        except Exception as e:
+            print(f"Error reading segment boundaries from file: {e}")

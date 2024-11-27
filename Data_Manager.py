@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import json 
 
 class SegmentDataFrame(pd.DataFrame):
     # Override __getitem__ for custom behavior
@@ -91,3 +92,12 @@ class DataDivision:
             }
 
         self._segment_boundaries =  segment_boundaries
+        self.save_segment_boundaries()
+
+    def save_segment_boundaries(self):
+        try:
+            with open('segment_boundaries.txt', 'w') as file:
+                json.dump(self._segment_boundaries, file, indent=4)
+            print(f"Segment boundaries successfully written to {'segment_boundaries.txt'}")
+        except Exception as e:
+            print(f"Error writing segment boundaries to file: {e}")
