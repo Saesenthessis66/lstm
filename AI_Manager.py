@@ -124,6 +124,9 @@ class AI_Manager:
 
 
     def predict_route(self, df, tms_data):
+
+        df = pd.DataFrame(df)
+
         # Load scalers and model
         self._scaler_X = joblib.load('scaler_X.pkl')
         self._scaler_y = joblib.load('scaler_y.pkl')
