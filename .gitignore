@@ -1,6 +1,5 @@
-agv.pkl
 venv
-kerases
 __pycache__
-jakub.keras
-scaler.pkl
+Config/AI/
+*.csv
+*.pkl

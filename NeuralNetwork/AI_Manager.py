@@ -1,52 +1,60 @@
 import os
 
+# Disable oneDNN optimizations for TensorFlow for compatibility
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 import pandas as pd
 import numpy as np
 import joblib
 import json 
+import matplotlib.pyplot as plt
 
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import OneHotEncoder
-from tensorflow.keras.models import load_model, Model
+from tensorflow.keras.models import load_model, Model, Sequential
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout
 
 class AI_Manager:
 
-    _scaler_X : MinMaxScaler
-    _scaler_y : MinMaxScaler
-    _segment_boundaries : []
+    _scaler_X : MinMaxScaler # Scaler for input features
+    _scaler_y : MinMaxScaler # Scaler for output features
+    _segment_boundaries : {} # Dictionary with start and end points for each segment
 
+    # Initialize AI_Manager and set up number of time steps for LSTM input sequences
     def __init__(self, steps: int,):
         self._n_steps = steps
-        self.load_segment_boundaries()
+        self.load_segment_boundaries() # Load segment boundaries from a file
 
+    # Validate that all segments in the input DataFrame were present during training, warn if there are any unknown segments    
     def validate_segments(self, df):
+        # Retrieve known segments from the encoder
         known_segments = set(self.segment_encoder.categories_[0])
+        # Find unique segments in the input data
         prediction_segments = set(df['Current segment'].unique())
 
+        # Identify unknown segments
         unknown_segments = prediction_segments - known_segments
         if unknown_segments:
             print(f"Warning: The following segments were not seen during training and will be ignored: {unknown_segments}")
 
-
+    #Preprocess training and validation data for model training
     def preprocess_data(self, train_df, val_df):
-        # Select features and targets
+        # Columns to use as input and output
         input_columns = ['X-coordinate', 'Y-coordinate', 'Heading', 'Current segment']
         output_columns = ['X-coordinate', 'Y-coordinate', 'Heading']
 
+        # Separate inputs and targets for training and validation
         X_train = train_df[input_columns].values
         y_train = train_df[output_columns].values
         X_val = val_df[input_columns].values
         y_val = val_df[output_columns].values
 
-        # Initialize separate scalers
-        self._scaler_X = MinMaxScaler()  # For input features
-        self._scaler_y = MinMaxScaler()  # For target values
+        # Initialize and fit scalers for numerical features
+        self._scaler_X = MinMaxScaler()  # Scaler for input features
+        self._scaler_y = MinMaxScaler()  # Scaler for output targets
 
-        # One-hot encoding for `Current segment` with `handle_unknown='ignore'`
+        # One-hot encode 'Current segment' with handling for unknown categories
         self.segment_encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')  # Enable handling unknown categories
         segment_train = train_df[['Current segment']]
         segment_val = val_df[['Current segment']]
@@ -63,15 +71,16 @@ class AI_Manager:
         X_train_scaled = self._scaler_X.fit_transform(other_train_features)
         X_val_scaled = self._scaler_X.transform(other_val_features)
 
-        # Concatenate scaled features and one-hot-encoded segment
+        # Combine scaled features with one-hot encoded segment data
         X_train = np.hstack([X_train_scaled, segment_train_encoded])
         X_val = np.hstack([X_val_scaled, segment_val_encoded])
 
+        # Scale output targets
         self._scaler_y = MinMaxScaler()
         y_train = self._scaler_y.fit_transform(train_df[output_columns])
         y_val = self._scaler_y.transform(val_df[output_columns])
 
-        # Create sequences
+        # Create sequences of data for LSTM input
         def create_sequences(data, target, seq_length):
             X_seq, y_seq = [], []
             for i in range(len(data) - seq_length):
@@ -83,9 +92,9 @@ class AI_Manager:
         self.X_val_seq, self.y_val_seq = create_sequences(X_val, y_val, self._n_steps)
 
         # Save the OneHotEncoder and scalers
-        joblib.dump(self.segment_encoder, 'segment_encoder.pkl')  # Save the encoder
-        joblib.dump(self._scaler_X, 'scaler_X.pkl')
-        joblib.dump(self._scaler_y, 'scaler_y.pkl')
+        joblib.dump(self.segment_encoder, 'Config/AI/segment_encoder.pkl') 
+        joblib.dump(self._scaler_X, 'Config/AI/scaler_X.pkl')
+        joblib.dump(self._scaler_y, 'Config/AI/scaler_y.pkl')
 
     def train_model(self):
         # Input layer
@@ -98,7 +107,9 @@ class AI_Manager:
 
         # Dense layers
         dense_out = Dense(32, activation='relu')(lstm_out)
-        dense_out = Dense(64, activation='sigmoid')(dense_out)
+        dense_out = Dense(128, activation='sigmoid')(dense_out)
+        dense_out = Dense(64)(dense_out)
+        dense_out = Dropout(0.3)(dense_out)
 
         # Output layer
         output_main = Dense(3)(dense_out)
@@ -107,38 +118,106 @@ class AI_Manager:
         model = Model(inputs=input_main, outputs=output_main)
 
         # Compile the model
-        model.compile(optimizer='adam', loss='mae', metrics=['mae'])
+        model.compile(optimizer='adam', loss='mse', metrics=['mse'])
 
         # Early stopping
         early_stopping = EarlyStopping(monitor='val_loss', patience=7, restore_best_weights=True)
 
         # Train the model
-        history = model.fit(
+        model.fit(
             self.X_train_seq, self.y_train_seq,
             validation_data=(self.X_val_seq, self.y_val_seq),
             epochs=250, batch_size=32, callbacks=[early_stopping], verbose=1
         )
 
         # Save the trained model
-        model.save('model.keras')
+        model.save('Config/AI/model.keras')
+
+    def train_battery_model(self, data):
+
+        data = data[['Battery cell voltage']]
+
+        scaler = MinMaxScaler()
+        scaled_data = scaler.fit_transform(data)
+
+        # Create sequences of 20 timesteps
+        X, y = [], []
+        for i in range(len(scaled_data) - self._n_steps):
+            X.append(scaled_data[i:i + self._n_steps, 0])
+            y.append(scaled_data[i + self._n_steps, 0])
+
+        X = np.array(X)
+        y = np.array(y)
+
+        # Reshape X for LSTM (samples, timesteps, features)
+        X = X.reshape((X.shape[0], X.shape[1], 1))
+
+        # Create the LSTM model
+        model = Sequential([
+            LSTM(16, input_shape=(X.shape[1], 1)),
+            Dense(16, activation='relu'),
+            Dense(1)  # Single output for the next voltage value
+        ])
+
+        # Compile the model
+        model.compile(optimizer='adam', loss='mse')
+
+        # Train the model
+        model.fit(X, y, epochs=12, batch_size=32, validation_split=0.2)
+
+        # Save the model
+        model.save('Config/AI/battery_model.keras')
+
+        # Save the scaler
+        joblib.dump(scaler, 'Config/AI/scaler_battery.pkl')
+
+        self.predict_battery(X)
+
+    def predict_battery(self,  X):
+        # df = pd.DataFrame(df)
+
+        scaler = joblib.load('Config/AI/scaler_battery.pkl')
+
+        model = load_model('Config/AI/battery_model.keras')
+
+        predicted = model.predict(X)
+
+        # Inverse scale the data to get actual voltage values
+        predicted_actual = scaler.inverse_transform(predicted)
+
+        # Plot the predictions vs. actual values
+        plt.figure(figsize=(10, 6))
+        plt.plot(predicted_actual, label='Predicted Voltage', color='red', linestyle='--')
+        plt.title("Battery Cell Voltage Prediction")
+        plt.xlabel("Time Index")
+        plt.ylabel("Battery Cell Voltage")
+        plt.legend()
+        plt.grid()
+        plt.show()
 
 
+    # Predict a route based on initial input data and a trained LSTM model
     def predict_route(self, df, tms_data):
-
+        # Change ordinary array to pandas dataframe
         df = pd.DataFrame(df)
-
-        # Load scalers and model
-        self._scaler_X = joblib.load('scaler_X.pkl')
-        self._scaler_y = joblib.load('scaler_y.pkl')
-        self.segment_encoder = joblib.load('segment_encoder.pkl')  # Load the encoder
-        model = load_model('model.keras')
+        print(df)
+        # Load previously saved scalers, encoder and trained model
+        self._scaler_X = joblib.load('Config/AI/scaler_X.pkl')
+        self._scaler_y = joblib.load('Config/AI/scaler_y.pkl')
+        self.segment_encoder = joblib.load('Config/AI/segment_encoder.pkl')
+        model = load_model('Config/AI/model.keras')
         
-        # Use the last `n_steps` rows as initial input data
+        # Initialize the input DataFrame with the last `n_steps`
         df = df[-self._n_steps:].copy()
-        predictions = []
+        predictions = [] # Store all predictions
 
-        for idx, curr_segment in enumerate(tms_data):
-            # Get segment boundaries
+        # Find the last segment in `df`'s 'Current segment' column
+        last_segment_in_df = df['Current segment'].iloc[-1] 
+        if last_segment_in_df in tms_data:
+            start_idx = tms_data.index(last_segment_in_df)  # Find its index in tms_data
+
+        for idx, curr_segment in enumerate(tms_data[start_idx:]):
+            # Extract boundaries for the current segment
             boundaries = self._segment_boundaries[str(curr_segment)]
             end_coords = boundaries['end_coordinates']
             
@@ -180,7 +259,7 @@ class AI_Manager:
 
                 # Check if the predicted point is moving away from the endpoint
                 if previous_distance_to_end is not None:
-                    if distance_to_end > previous_distance_to_end:
+                    if distance_to_end > previous_distance_to_end or round(distance_to_end, 4) == round(previous_distance_to_end, 4):
                         consecutive_moving_away += 1
                         print(f"Point is moving away from endpoint. Count: {consecutive_moving_away}")
                     else:
@@ -198,11 +277,12 @@ class AI_Manager:
         predicted_df = pd.concat(predictions, ignore_index=True)
         return predicted_df
 
+    # Load segment boundaries from file
     def load_segment_boundaries(self):
         try:
-            with open('segment_boundaries.txt', 'r') as file:
+            with open('Config/AI/segment_boundaries.txt', 'r') as file:
                 segment_boundaries = json.load(file)
-            print(f"Segment boundaries successfully read from {'segment_boundaries.txt'}")
-            self._segment_boundaries = segment_boundaries
+            print(f"Segment boundaries successfully read from {'Config/AI/segment_boundaries.txt'}")
+            self._segment_boundaries = segment_boundaries # Store segment boundaries
         except Exception as e:
             print(f"Error reading segment boundaries from file: {e}")
