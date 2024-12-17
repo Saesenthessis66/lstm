@@ -17,8 +17,8 @@ data.to_csv('trimmed_'+file)
 subset1 = data[:int(len(data)*0.8)] 
 subset2 = data[int(len(data)*0.8):]
 
-aiManager = AI_Manager(25)
-aiManager.train_battery_model(dataManager._fullData)
+aiManager = AI_Manager(20)
+aiManager.train_battery_model(data)
 aiManager.preprocess_data(subset1, subset2)
 aiManager.train_model()
 

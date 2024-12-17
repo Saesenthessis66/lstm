@@ -81,79 +81,32 @@ class DataManager:
             # Drop intermediate columns
             self._fullData.drop(columns=['delta_x', 'delta_y', 'delta_heading', 'movement_metric'], inplace=True)
 
+    # Determine the boundaries (start and end points) for each segment
     def get_segment_boundaries(self):
-        # Step 1: Trim first and last rows corresponding to incomplete segments
-        full_data = self._fullData  # Original dataset
+        # Get a list of unique segment IDs
+        segments = self._fullData['Current segment'].unique()
+        self._allSegments = segments # Store the unique segments
+        segment_boundaries = {} # Dictionary to hold the boundaries
 
-        # Identify the first segment and its consecutive rows
-        first_segment = full_data['Current segment'].iloc[0]
-        first_segment_indices = full_data[full_data['Current segment'] == first_segment].index
-        first_rows_to_drop = first_segment_indices[first_segment_indices <= full_data.index[-1]].tolist()
+        # Iterate through each segment ID
+        for segment in segments:
+            # Filter data rows corresponding to the current segment
+            segment_data = self._fullData[self._fullData['Current segment'] == segment]
 
-        # Identify the last segment and its consecutive rows
-        last_segment = full_data['Current segment'].iloc[-1]
-        last_segment_indices = full_data[full_data['Current segment'] == last_segment].index
-        last_rows_to_drop = last_segment_indices[last_segment_indices >= full_data.index[0]].tolist()
+            # Extract the start and end coordinates for the segment
+            start_index = segment_data.index[0]
+            end_index = segment_data.index[-1]
+            start_point = segment_data.loc[start_index, ['X-coordinate', 'Y-coordinate']].tolist()
+            end_point = segment_data.loc[end_index, ['X-coordinate', 'Y-coordinate']].tolist()
 
-        # Trim the data by dropping first and last rows
-        trimmed_data = full_data.drop(first_rows_to_drop + last_rows_to_drop)
-
-        # Step 2: Split the trimmed data into consecutive blocks
-        segment_blocks = []
-        current_segment = None
-        current_block = []
-
-        for idx, row in trimmed_data.iterrows():
-            segment = row['Current segment']
-
-            if segment != current_segment:
-                # Save the current block when the segment changes
-                if current_block:
-                    segment_blocks.append((current_segment, pd.DataFrame(current_block)))
-                # Start a new block
-                current_block = [row]
-                current_segment = segment
-            else:
-                current_block.append(row)
-
-        # Save the last block
-        if current_block:
-            segment_blocks.append((current_segment, pd.DataFrame(current_block)))
-
-        # Step 3: Calculate average start and end points for each segment
-        segment_stats = {}
-        segment_coordinates = {}
-
-        # Iterate through all segment blocks
-        for segment, block in segment_blocks:
-            # Get start and end points for the block
-            start_x, start_y = block.iloc[0]['X-coordinate'], block.iloc[0]['Y-coordinate']
-            end_x, end_y = block.iloc[-1]['X-coordinate'], block.iloc[-1]['Y-coordinate']
-
-            # Accumulate start and end points for each segment
-            if segment not in segment_coordinates:
-                segment_coordinates[segment] = {
-                    'start_x': [], 'start_y': [], 'end_x': [], 'end_y': []
-                }
-            segment_coordinates[segment]['start_x'].append(start_x)
-            segment_coordinates[segment]['start_y'].append(start_y)
-            segment_coordinates[segment]['end_x'].append(end_x)
-            segment_coordinates[segment]['end_y'].append(end_y)
-
-        # Calculate averages for each segment
-        for segment, coords in segment_coordinates.items():
-            avg_start_x = sum(coords['start_x']) / len(coords['start_x'])
-            avg_start_y = sum(coords['start_y']) / len(coords['start_y'])
-            avg_end_x = sum(coords['end_x']) / len(coords['end_x'])
-            avg_end_y = sum(coords['end_y']) / len(coords['end_y'])
-
-            segment_stats[segment] = {
-                'start_coordinates': [avg_start_x, avg_start_y],
-                'end_coordinates': [avg_end_x, avg_end_y]
+            # Store the start and end coordinates in the dictionary
+            segment_boundaries[segment] = {
+                'start_coordinates': start_point,
+                'end_coordinates': end_point
             }
 
         # Save the segment boundaries
-        self._segment_boundaries = segment_stats
+        self._segment_boundaries =  segment_boundaries
         self.save_segment_boundaries()
 
     # Save segment boundaries into a .txt file
